@@ -12,11 +12,6 @@ PYSIM_LOC='./pysim/pySim-read.py'
 SHADYSIM_PYTHON='./sim-tools/env/bin/python'
 SHADYSIM_LOC='sim-tools/shadysim/shadysim.py'
 
-# Initialize some globals
-ADM1=""
-KIC1=""
-KID1=""
-KIK1=""
 
 retrieve_keys(){
     # Read card and get ICCID. TODO: Fix this to get both values without running pySim-read twice.
@@ -27,7 +22,7 @@ retrieve_keys(){
         exit 1;
     fi
 
-    CARD_TYPE=`$PYSIM_PYTHON $PYSIM_LOC -p 0 2>/dev/null | grep Autodetected\ card\ type | cut -d: -f2 | sed 's/^*//g'`;
+    $CARD_TYPE=`$PYSIM_PYTHON $PYSIM_LOC -p 0 2>/dev/null | grep Autodetected\ card\ type | cut -d: -f2 | sed 's/^*//g'`;
     echo Found SIM card type: $CARD_TYPE
 
     # Retrieve relevant keys from MySQL DB:
@@ -77,10 +72,26 @@ retrieve_keys(){
 }
 
 print_usage() {
-    printf "Insert usage statement here.\n"
+    echo "--------Usage--------"
+    echo "-d DEV        Serial device for SIM access [default:/dev/ttyUSB0]"
+    echo "-b BAUD       Baud rate for SIM access [default: 9600]"
+    echo "-p PCSC       Number of PCSC device to use"
+    echo "-s SOURCE     Data Source [default: command line]"
+    echo "-n NAME       Operator name"
+    echo "-c CC         Country Code [default: 1]"
+    echo "-x MCC        Mobile Country Code [default: 001]"
+    echo "-y MNC        Mobile Network Code [default: 01]"
+    echo "-i IMSI       IMSI"
+    echo "-k KI         KI"
+    echo "-o OPC        OPc"
+    echo "-A ACC        Access control class"
+    echo "-L APPLET     Load specified applet to SIM"
+    echo "-I APPLET     Install specified applet to SIM"
+    echo "-S            List installed applets"
+
 }
 read_card() {
-    $PYSIM_PYTHON $PYSIM_LOC -p 0
+    $PYSIM_PYTHON $PYSIM_LOC -p $PCSC_DEVICE 
 }
 list_applets() {
     retrieve_keys
@@ -88,18 +99,26 @@ list_applets() {
     $SHADYSIM_PYTHON $SHADYSIM_LOC --pcsc -t --kic $KIC1 --kid $KID1
 }
 
-while getopts 'hd:p:S:n:x:y:i:k:o:A:LR' flag; do
+while getopts 'd:b:p:s:n:c:x:y:i:k:o:L:I:ShR' flag; do
   case "${flag}" in
-    a) a_flag='true' ;;
-    b) b_flag='true' ;;
-    f) files="${OPTARG}" ;;
-    v) verbose='true' ;;
-    h) print_usage
-        exit 1 ;;
-    R) retrieve_keys
+    d) DEVICE="${OPTARG}" ;;
+    b) BAUD="${OPTARG}" ;;
+    p) PCSC_DEVICE="${OPTARG}" ;;
+    s) SOURCE="${OPTARG}" ;;
+    n) NAME="${OPTARG}" ;;
+    c) CC="${OPTARG}" ;;
+    x) MCC="${OPTARG}" ;;
+    y) MNC="${OPTARG}" ;;
+    i) IMSI="${OPTARG}" ;;
+    k) KI="${OPTARG}" ;;
+    o) OPC="${OPTARG}" ;;
+    R) read_card 
         exit 0 ;;
-    L) list_applets
+    L) APPLET="${OPTARG}" ;;
+    I) APPLET="${OPTARG}" ;;
+    S) list_applets
+        exit 0 ;;
+    h) print_usage
         exit 0 ;;
   esac
 done
-
