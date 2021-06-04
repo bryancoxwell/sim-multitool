@@ -1,0 +1,105 @@
+#!/bin/bash
+
+USER=ser
+PASS=passwd
+HOST=dev.home.lan
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+PYSIM_PYTHON='./pysim/env/bin/python3'
+PYSIM_LOC='./pysim/pySim-read.py'
+SHADYSIM_PYTHON='./sim-tools/env/bin/python'
+SHADYSIM_LOC='sim-tools/shadysim/shadysim.py'
+
+# Initialize some globals
+ADM1=""
+KIC1=""
+KID1=""
+KIK1=""
+
+retrieve_keys(){
+    # Read card and get ICCID. TODO: Fix this to get both values without running pySim-read twice.
+    ICCID=`$PYSIM_PYTHON $PYSIM_LOC -p 0 2>/dev/null | grep ICCID | sed 's/[^0-9]*//g'`;
+
+    if [ -z $ICCID ] ; then
+        echo -e "${RED}No Valid ICCID found. Check that the SIM is inserted in the card reader. Exiting.${NC}"
+        exit 1;
+    fi
+
+    CARD_TYPE=`$PYSIM_PYTHON $PYSIM_LOC -p 0 2>/dev/null | grep Autodetected\ card\ type | cut -d: -f2 | sed 's/^*//g'`;
+    echo Found SIM card type: $CARD_TYPE
+
+    # Retrieve relevant keys from MySQL DB:
+    echo "Fetching ADM1, KIC1, KID1, and KIK1 for card with ICCID $ICCID";
+    KEYS=`mysql -N -h $HOST -u$USER -p$PASS -e \
+    "USE sim_cards;
+    SELECT ADM1, KIC1, KID1, KIK1 FROM sim_cards WHERE ICCID='$ICCID';" 2>/dev/null`;
+
+    # Keys were put into list $KEYS, the below command makes them accessible at
+    # variables $1, $2, $3, etc. in the order they appear in the SELECT statement.
+    # Set variables and ensure they're the proper type.
+    set -- $KEYS;
+    ADM1=`echo $1 | sed 's/[^0-9]*//g'`
+    KIC1=$2
+    KID1=$3
+    KIK1=$4
+
+    # Perform some basic sanity checks on the keys, writing the SIMs with the wrong 
+    # keys could brick the card.
+
+    # Check ADM1, ensure it's an 8 digit integer:
+    if [ ${#ADM1} == 8 ] ; then
+        echo -e "ADM1: $ADM1. ${GREEN}OK.${NC}"
+    else
+        echo -e "${RED}ADM1 incorrect length. Exiting.${NC}"
+        exit 1;
+    fi
+    # Check length of KIC, KID, and KIK, ensure length is 32.
+    if [ ${#KIC1} == 32 ] ; then
+        echo -e "KIC1: $KIC1. ${GREEN}OK.${NC}"
+    else
+        echo -e "${RED}KIC1 incorrect length. Exiting.${NC}"
+        exit 1;
+    fi
+    if [ ${#KID1} == 32 ] ; then
+        echo -e "KID1: $KID1. ${GREEN}OK.${NC}"
+    else
+        echo -e "${RED}KID1 incorrect length. Exiting.${NC}"
+        exit 1;
+    fi
+    if [ ${#KIK1} == 32 ] ; then
+        echo -e "KIK1: $KIK1. ${GREEN}OK.${NC}"
+    else
+        echo -e "${RED}KIK1 incorrect length. Exiting.${NC}"
+        exit 1;
+    fi
+}
+
+print_usage() {
+    printf "Insert usage statement here.\n"
+}
+read_card() {
+    $PYSIM_PYTHON $PYSIM_LOC -p 0
+}
+list_applets() {
+    retrieve_keys
+    printf "\nListing applets from SIM:\n\n"
+    $SHADYSIM_PYTHON $SHADYSIM_LOC --pcsc -t --kic $KIC1 --kid $KID1
+}
+
+while getopts 'hd:p:S:n:x:y:i:k:o:A:LR' flag; do
+  case "${flag}" in
+    a) a_flag='true' ;;
+    b) b_flag='true' ;;
+    f) files="${OPTARG}" ;;
+    v) verbose='true' ;;
+    h) print_usage
+        exit 1 ;;
+    R) retrieve_keys
+        exit 0 ;;
+    L) list_applets
+        exit 0 ;;
+  esac
+done
+
