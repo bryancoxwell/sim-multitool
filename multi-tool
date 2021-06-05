@@ -2,9 +2,9 @@
 
 # Credentials for the remote MySQL database where the 
 # SIM keys are stored.
-USER=<USER>
-PASS=<PASSWORD>
-HOST=dev.home.lan
+USER=$MYSQL_USER
+PASS=$MYSQL_PASSWORD
+HOST=$MYSQL_HOST
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -13,6 +13,7 @@ NC='\033[0m'
 PYSIM_PYTHON='./pysim/env/bin/python3'
 PYSIM_READ='./pysim/pySim-read.py'
 PYSIM_PROG='./pysim/pySim-prog.py'
+PYSIM_SHELL='./pysim/pySim-shell.py'
 SHADYSIM_PYTHON='./sim-tools/env/bin/python'
 SHADYSIM='sim-tools/shadysim/shadysim.py'
 # Just assume only PCSC devices since that's all we use. Configurable here if that changes.
@@ -94,7 +95,8 @@ print_usage() {
     echo "read  | -r        Read SIM. Uses pySim-read. Requires no arguments."
     echo "write | -w        Write SIM. Uses pySim-prog. Pass all arguments as you would to pySim-prog EXCEPT keys."
     echo "list  | -L        Lists applets on SIM. Uses Shadysim. Requires no arguments."
-    echo "push  | -p        Push (load and install) applet to SIM. Uses Shadysim. Pass all arguments as you would to Shadysim EXCEPT keys."
+    echo -e "push  | -p        Push (load and install) applet to SIM. Uses Shadysim.\n                  Pass all arguments as you would to Shadysim EXCEPT keys."
+    echo -e "shell             Writes ADM1 key to local script named 'adm' and opens pySim-shell.\n                  Run 'run_script adm' from pySim-shell to verify ADM1 key"
     echo -e "\nExample:\n"
     echo "  ./multi-tool write -i 001010000055510 -x 001 -y 01 -n TEST"
     echo "  Writes a SIM with IMSI 001010000055510, MCC 001, MNC 01, and Operator name of TEST."
@@ -202,20 +204,23 @@ elif [[ $1 == "write" ]] || [[ $1 == "-w" ]]; then
     update_db
     exit 0;
 
-elif [[ $1 == "list_applets" ]] || [[ $1 == "-l" ]]; then
+elif [[ $1 == "list" ]] || [[ $1 == "-l" ]]; then
     retrieve_keys
     set_shadysim_version
     echo ""
     $SHADYSIM_PYTHON $SHADYSIM $READER_ARG -t --kic $KIC1 --kid $KID1
     exit 0;
 
-elif [[ $1 == "push_applet" ]] || [[ $1 == "-p" ]]; then
+elif [[ $1 == "push" ]] || [[ $1 == "-p" ]]; then
     retrieve_keys
     set_shadysim_version
     echo ""
     $SHADYSIM_PYTHON $SHADYSIM $READER_ARG --kic $KIC1 --kid $KID1 ${@:2}
     exit 0;
-
+elif [[ $1 == "shell" ]]; then
+    retrieve_keys
+    echo "verify_adm $ADM1" > adm
+    $PYSIM_PYTHON $PYSIM_SHELL $READER_ARG
 elif [[ $1 == "help" ]] || [[ $1 == "-h" ]]; then
     print_usage
     exit 0;
