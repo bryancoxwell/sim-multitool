@@ -1,46 +1,58 @@
 #!/bin/bash
 
-USER=ser
-PASS=passwd
+# Credentials for the remote MySQL database where the 
+# SIM keys are stored.
+USER=<USER>
+PASS=<PASSWORD>
 HOST=dev.home.lan
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
-PYSIM_PYTHON='./pysim/env/bin/python3'
-PYSIM_LOC='./pysim/pySim-read.py'
-SHADYSIM_PYTHON='./sim-tools/env/bin/python'
-SHADYSIM_LOC='sim-tools/shadysim/shadysim.py'
 
+PYSIM_PYTHON='./pysim/env/bin/python3'
+PYSIM_READ='./pysim/pySim-read.py'
+PYSIM_PROG='./pysim/pySim-prog.py'
+SHADYSIM_PYTHON='./sim-tools/env/bin/python'
+SHADYSIM='sim-tools/shadysim/shadysim.py'
+# Just assume only PCSC devices since that's all we use. Configurable here if that changes.
+READER_ARG='-p0'
 
 retrieve_keys(){
-    # Read card and get ICCID. TODO: Fix this to get both values without running pySim-read twice.
-    ICCID=`$PYSIM_PYTHON $PYSIM_LOC -p 0 2>/dev/null | grep ICCID | sed 's/[^0-9]*//g'`;
+    # Read card and get ICCID, then use it to retrieve keys from DB.
+    # Right now ADM1 and OTA keys are retrieved regardless of what keys are actually needed for
+    # a given operation.
+    ICCID=`$PYSIM_PYTHON $PYSIM_READ $READER_ARG 2>/dev/null | grep ICCID | sed 's/[^0-9]*//g'`;
 
     if [ -z $ICCID ] ; then
         echo -e "${RED}No Valid ICCID found. Check that the SIM is inserted in the card reader. Exiting.${NC}"
         exit 1;
     fi
 
-    $CARD_TYPE=`$PYSIM_PYTHON $PYSIM_LOC -p 0 2>/dev/null | grep Autodetected\ card\ type | cut -d: -f2 | sed 's/^*//g'`;
-    echo Found SIM card type: $CARD_TYPE
+    CARD_TYPE=`$PYSIM_PYTHON $PYSIM_READ $READER_ARG | grep Autodetected | cut -d":" -f2 | xargs`;
+    echo "Found SIM card type: $CARD_TYPE"
 
     # Retrieve relevant keys from MySQL DB:
     echo "Fetching ADM1, KIC1, KID1, and KIK1 for card with ICCID $ICCID";
     KEYS=`mysql -N -h $HOST -u$USER -p$PASS -e \
     "USE sim_cards;
     SELECT ADM1, KIC1, KID1, KIK1 FROM sim_cards WHERE ICCID='$ICCID';" 2>/dev/null`;
+    if [[ -z $KEYS ]]; then
+        echo -e "${RED}Keys for ICCID not found in DB. Exiting.${NC}"
+        exit 1;
+    fi
+    
 
     # Keys were put into list $KEYS, the below command makes them accessible at
     # variables $1, $2, $3, etc. in the order they appear in the SELECT statement.
     # Set variables and ensure they're the proper type.
     set -- $KEYS;
-    ADM1=`echo $1 | sed 's/[^0-9]*//g'`
+    ADM1=$1
     KIC1=$2
     KID1=$3
     KIK1=$4
 
-    # Perform some basic sanity checks on the keys, writing the SIMs with the wrong 
+    # Perform some basic checks on the keys, writing the SIMs with the wrong 
     # keys could brick the card.
 
     # Check ADM1, ensure it's an 8 digit integer:
@@ -51,6 +63,8 @@ retrieve_keys(){
         exit 1;
     fi
     # Check length of KIC, KID, and KIK, ensure length is 32.
+    # Not perfect, but should let you know if you're trying to unlock
+    # card with garbage values.
     if [ ${#KIC1} == 32 ] ; then
         echo -e "KIC1: $KIC1. ${GREEN}OK.${NC}"
     else
@@ -72,53 +86,141 @@ retrieve_keys(){
 }
 
 print_usage() {
-    echo "--------Usage--------"
-    echo "-d DEV        Serial device for SIM access [default:/dev/ttyUSB0]"
-    echo "-b BAUD       Baud rate for SIM access [default: 9600]"
-    echo "-p PCSC       Number of PCSC device to use"
-    echo "-s SOURCE     Data Source [default: command line]"
-    echo "-n NAME       Operator name"
-    echo "-c CC         Country Code [default: 1]"
-    echo "-x MCC        Mobile Country Code [default: 001]"
-    echo "-y MNC        Mobile Network Code [default: 01]"
-    echo "-i IMSI       IMSI"
-    echo "-k KI         KI"
-    echo "-o OPC        OPc"
-    echo "-A ACC        Access control class"
-    echo "-L APPLET     Load specified applet to SIM"
-    echo "-I APPLET     Install specified applet to SIM"
-    echo "-S            List installed applets"
+    echo "###############  Usage  ###############"
+    echo "NOTE: This script assumes using PCSC device 0 to write SIMS since that is "
+    echo "uniformly our use case. If you need to change this, configure READER_ARG in the script. "
+    echo -e "\nOptions:\n"
+    echo "help  | -h        This menu."
+    echo "read  | -r        Read SIM. Uses pySim-read. Requires no arguments."
+    echo "write | -w        Write SIM. Uses pySim-prog. Pass all arguments as you would to pySim-prog EXCEPT keys."
+    echo "list  | -L        Lists applets on SIM. Uses Shadysim. Requires no arguments."
+    echo "push  | -p        Push (load and install) applet to SIM. Uses Shadysim. Pass all arguments as you would to Shadysim EXCEPT keys."
+    echo -e "\nExample:\n"
+    echo "  ./multi-tool write -i 001010000055510 -x 001 -y 01 -n TEST"
+    echo "  Writes a SIM with IMSI 001010000055510, MCC 001, MNC 01, and Operator name of TEST."
+    echo -e "\n"
+}
 
+set_shadysim_version() {
+    if [[ "$CARD_TYPE" == "sysmoISIM-SJA2" ]]; then
+        SHADYSIM='sim-tools/shadysim/shadysim_isim.py'
+        echo "Using shadysim_isim.py"
+    else
+        SHADYSIM='sim-tools/shadysim/shadysim.py'
+        echo "Using shadysim.py"
+    fi
 }
-read_card() {
-    $PYSIM_PYTHON $PYSIM_LOC -p $PCSC_DEVICE 
+
+# Need to parse input for write operations to update values in the DB.
+parse_input() {
+    IMSI=""
+    OPC=""
+    KI=""
+    ACC=""
+    INPUT=$@
+    for i in $INPUT; do
+        case $i in
+            --IMSI=*)
+            IMSI="${i#*=}"
+            shift
+            ;;
+            -i)
+            IMSI=`echo ${INPUT#*$i} | head -n1 | cut -d " " -f1`
+            shift
+            ;;
+            --opc=*)
+            OPC="${i#*=}"
+            shift
+            ;;
+            -o)
+            OPC=`echo ${INPUT#*$i} | head -n1 | cut -d " " -f1`
+            shift
+            ;;
+            --ki=*)
+            KI="${i#*=}"
+            shift
+            ;;
+            -k)
+            KI=`echo ${INPUT#*$i} | head -n1 | cut -d " " -f1`
+            shift
+            ;;
+            --acc=*)
+            ACC="${i#*=}"
+            shift
+            ;;
+            --acc)
+            ACC=`echo ${INPUT#*$i} | head -n1 | cut -d " " -f1`
+            shift
+            ;;
+        esac
+    done
 }
-list_applets() {
+
+update_db() {
+    set_sep_value(){
+        if [[ ${#UPDATE_STATEMENT} -gt 3 ]]; then
+            SEP=', '
+        else
+            SEP=' '
+        fi
+    }
+    UPDATE_STATEMENT="SET"
+    if [[ -n $IMSI ]]; then
+        UPDATE_STATEMENT="${UPDATE_STATEMENT} IMSI='$IMSI'"
+        echo "Updating IMSI in database: $IMSI"
+    fi
+    if [[ -n $OPC ]]; then
+        set_sep_value
+        UPDATE_STATEMENT="${UPDATE_STATEMENT}${SEP}OPC='$OPC'"
+        echo "Updating OPC in database: $OPC"
+    fi
+    if [[ -n $KI ]]; then
+        set_sep_value
+        UPDATE_STATEMENT="${UPDATE_STATEMENT}${SEP}KI='$KI'"
+        echo "Updating KI in database: $KI"
+    fi
+    if [[ -n $ACC ]]; then
+        set_sep_value
+        UPDATE_STATEMENT="${UPDATE_STATEMENT}${SEP}ACC='$ACC'"
+        echo "Updating ACC in database: $ACC"
+    fi
+    update=`mysql -N -h $HOST -u$USER -p$PASS -e \
+    "USE sim_cards;
+    UPDATE sim_cards $UPDATE_STATEMENT WHERE ICCID='$ICCID';" 2>/dev/null`;
+}
+
+if [[ $1 == "read" ]] || [[ $1 == "-r" ]]; then
+    $PYSIM_PYTHON $PYSIM_READ $READER_ARG
+    exit 0;
+
+elif [[ $1 == "write" ]] || [[ $1 == "-w" ]]; then
     retrieve_keys
-    printf "\nListing applets from SIM:\n\n"
-    $SHADYSIM_PYTHON $SHADYSIM_LOC --pcsc -t --kic $KIC1 --kid $KID1
-}
+    echo ""
+    ARGS=${@:2}
+    $PYSIM_PYTHON $PYSIM_PROG $READER_ARG ${@:2} -a $ADM1 -s $ICCID
+    parse_input $ARGS
+    update_db
+    exit 0;
 
-while getopts 'd:b:p:s:n:c:x:y:i:k:o:L:I:ShR' flag; do
-  case "${flag}" in
-    d) DEVICE="${OPTARG}" ;;
-    b) BAUD="${OPTARG}" ;;
-    p) PCSC_DEVICE="${OPTARG}" ;;
-    s) SOURCE="${OPTARG}" ;;
-    n) NAME="${OPTARG}" ;;
-    c) CC="${OPTARG}" ;;
-    x) MCC="${OPTARG}" ;;
-    y) MNC="${OPTARG}" ;;
-    i) IMSI="${OPTARG}" ;;
-    k) KI="${OPTARG}" ;;
-    o) OPC="${OPTARG}" ;;
-    R) read_card 
-        exit 0 ;;
-    L) APPLET="${OPTARG}" ;;
-    I) APPLET="${OPTARG}" ;;
-    S) list_applets
-        exit 0 ;;
-    h) print_usage
-        exit 0 ;;
-  esac
-done
+elif [[ $1 == "list_applets" ]] || [[ $1 == "-l" ]]; then
+    retrieve_keys
+    set_shadysim_version
+    echo ""
+    $SHADYSIM_PYTHON $SHADYSIM $READER_ARG -t --kic $KIC1 --kid $KID1
+    exit 0;
+
+elif [[ $1 == "push_applet" ]] || [[ $1 == "-p" ]]; then
+    retrieve_keys
+    set_shadysim_version
+    echo ""
+    $SHADYSIM_PYTHON $SHADYSIM $READER_ARG --kic $KIC1 --kid $KID1 ${@:2}
+    exit 0;
+
+elif [[ $1 == "help" ]] || [[ $1 == "-h" ]]; then
+    print_usage
+    exit 0;
+
+else
+    echo "Unknown parameter. Exiting."
+    exit 1;
+fi
