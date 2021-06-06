@@ -3,8 +3,10 @@
 This is a script for gluing together a few different SIM card related programs. It uses a database of SIM card key values which is not included. I built it for personal use so some assumptions are made about usage, but it should be simple to reconfigure.
 
 Notable assumptions:
-    - I always use PCSC devices, so all programs are called with `-p0`. Configure the `$READER_ARG` variable if this is not your use case.
-    - I use a database of SIM card key values and keys are retrieved from it. The schema is described below if needed.
+
+*I always use PCSC devices, so all programs are called with `-p0`. Configure the `$READER_ARG` variable if this is not your use case.
+
+*I use a database of SIM card key values and keys are retrieved from it. The schema is described below if needed.
 
 Still a work in progress.
 
@@ -23,8 +25,13 @@ This will install Osmocom's PySim, Shadysim, and Sysmo-Usim-Tool and set them up
 All multitool really does is call the above installed programs and pass along the arguments as you would if you were calling the program directly. Where needed, the database is queried to pass the ADM1, KIC, KID, and KIK keys to allow you to only pass the values or install applets without needing to chase down keys first. 
 
 For example:
+
   `./multi-tool write -i 001010000055510 -x 001 -y 01 -n TEST`
-will call `./pySim-prog -a <ADM1> -i <IMSI> -x <MCC> -y <MNC> -n <PROVIDER NAME>`
+
+will call 
+
+`./pysim/env/bin/python3 ./pysim/pySim-prog.py -a <ADM1> -i <IMSI> -x <MCC> -y <MNC> -n <PROVIDER NAME>`
+
 where the ADM value is provided by the DB (by calling pySim-read and querying the DB for the card's ICCID)
 
 NOTE: This script assumes using PCSC device 0 to write SIMS since that is uniformly my use case. If you need to change this, configure READER_ARG in the script.
