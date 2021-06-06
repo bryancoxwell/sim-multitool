@@ -16,3 +16,10 @@ virtualenv -p python2 env
 source env/bin/activate
 pip install pycrypto pyscard
 popd
+
+git clone https://github.com/herlesupreeth/sysmo-usim-tool
+pushd sysmo-usim-tool
+virtualenv -p python2 env
+source env/bin/activate
+pip install pycrypto pyscard pytlv
+popd

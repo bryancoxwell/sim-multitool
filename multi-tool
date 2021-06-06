@@ -16,6 +16,8 @@ PYSIM_PROG='./pysim/pySim-prog.py'
 PYSIM_SHELL='./pysim/pySim-shell.py'
 SHADYSIM_PYTHON='./sim-tools/env/bin/python'
 SHADYSIM='sim-tools/shadysim/shadysim.py'
+SIMTOOL_PYTHON='./sysmo-usim-tool/env/bin/python'
+SIMTOOL='./sysmo-usim-tool/'
 # Just assume only PCSC devices since that's all we use. Configurable here if that changes.
 READER_ARG='-p0'
 
@@ -97,6 +99,7 @@ print_usage() {
     echo "list  | -L        Lists applets on SIM. Uses Shadysim. Requires no arguments."
     echo -e "push  | -p        Push (load and install) applet to SIM. Uses Shadysim.\n                  Pass all arguments as you would to Shadysim EXCEPT keys."
     echo -e "shell             Writes ADM1 key to local script named 'adm' and opens pySim-shell.\n                  Run 'run_script adm' from pySim-shell to verify ADM1 key"
+    echo "simtool           Runs Sysmo-USIM-tool. Only passes ADM1."
     echo -e "\nExample:\n"
     echo "  ./multi-tool write -i 001010000055510 -x 001 -y 01 -n TEST"
     echo "  Writes a SIM with IMSI 001010000055510, MCC 001, MNC 01, and Operator name of TEST."
@@ -112,7 +115,16 @@ set_shadysim_version() {
         echo "Using shadysim.py"
     fi
 }
-
+set_simtool_version() {
+    if [[ "$CARD_TYPE" == "sysmoISIM-SJA2" ]]; then
+        SIMTOOL='sysmo-usim-tool/sysmo-isim-tool.sja2.py'
+    elif [[ "$CARD_TYPE" == "sysmoUSIM-SJS1" ]]; then
+        SIMTOOL='sysmo-usim-tool/sysmo-usim-tool.sjs1.py'
+    else
+        echo "${RED}It doesn't look like your card supports this operation. Exiting.${NC}"
+        exit 1;
+    fi
+}
 # Need to parse input for write operations to update values in the DB.
 parse_input() {
     IMSI=""
@@ -217,10 +229,20 @@ elif [[ $1 == "push" ]] || [[ $1 == "-p" ]]; then
     echo ""
     $SHADYSIM_PYTHON $SHADYSIM $READER_ARG --kic $KIC1 --kid $KID1 ${@:2}
     exit 0;
+elif [[ $1 == "shadysim" ]]; then
+    retrieve_keys
+    set_shadysim_version
+    echo ""
+    $SHADYSIM_PYTHON $SHADYSIM $READER_ARG --kic $KIC1 --kid $KID1 ${@:2}
+    exit 0;
 elif [[ $1 == "shell" ]]; then
     retrieve_keys
     echo "verify_adm $ADM1" > adm
     $PYSIM_PYTHON $PYSIM_SHELL $READER_ARG
+elif [[ $1 == "simtool" ]]; then
+    retrieve_keys
+    set_simtool_version
+    $SIMTOOL_PYTHON $SIMTOOL -a $ADM1 ${@:2}
 elif [[ $1 == "help" ]] || [[ $1 == "-h" ]]; then
     print_usage
     exit 0;
