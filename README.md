@@ -28,7 +28,7 @@ will call `./pySim-prog -a <ADM1> -i <IMSI> -x <MCC> -y <MNC> -n <PROVIDER NAME>
 where the ADM value is provided by the DB (by calling pySim-read and querying the DB for the card's ICCID)
 
 NOTE: This script assumes using PCSC device 0 to write SIMS since that is uniformly my use case. If you need to change this, configure READER_ARG in the script.
-
+```
 Options:
 
 help  | -h        This menu.
@@ -41,7 +41,7 @@ shell             Writes ADM1 key to local script named 'adm' and opens pySim-sh
                   Run 'run_script adm' from pySim-shell to verify ADM1 key
 simtool           Runs Sysmo-USIM-tool. Only passes ADM1.
 
-
+```
 ## The database
 
 A database might be overkill for a lot of folks, but if you want to use one, I set up my schema in a MySQL database for it as follows:
