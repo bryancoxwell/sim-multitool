@@ -4,19 +4,26 @@ This is a script for gluing together a few different SIM card related programs. 
 
 Notable assumptions:
 
-*I always use PCSC devices, so all programs are called with `-p0`. Configure the `$READER_ARG` variable if this is not your use case.
+* I always use PCSC devices, so all programs are called with `-p0`. Configure the `$READER_ARG` variable if this is not your use case.
 
-*I use a database of SIM card key values and keys are retrieved from it. The schema is described below if needed.
+* I use a database of SIM card key values and keys are retrieved from it. The schema is described below if needed.
 
 Still a work in progress.
 
 ## Installation
+
 Install dependencies:
+
 `apt-get install -y pcscd pcsc-tools libccid libpcsclite-dev python-pyscard`
+
 Download and install:
+
 `git clone https://github.com/BryanCoxwell/sim-multitool`
+
 `cd sim-multitool`
+
 `chmod +x install.sh`
+
 `./install.sh`
 
 This will install Osmocom's PySim, Shadysim, and Sysmo-Usim-Tool and set them up in their own virtual environments which the script calls them from. 
